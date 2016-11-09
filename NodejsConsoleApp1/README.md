@@ -7,7 +7,7 @@ https://www.npmjs.com/package/xlsx
 (uses Excel 2007)
 https://www.npmjs.com/package/winston
 
-I will need to:
+I will need to do these things very soon:
 
 parse file data for results
 use regular expressions to extract data from strings
