@@ -13,13 +13,13 @@ function gpdpFormatter(options) {
 	var keyColumnName = 'Test ID';
 
 	var WINSTON = require('winston');
-	WINSTON.remove(winston.transports.Console);
+	WINSTON.remove(WINSTON.transports.Console);
 	if ((typeof options.logfile) != 'undefined') {
 		WINSTON.add(WINSTON.transports.File, { filename: logfile, level: 'debug' });
-		WINSTON.ADD(WINSTON.transports.Console, { level: 'warn' });
+		WINSTON.add(WINSTON.transports.Console, { level: 'warn' });
 	}
 	else {
-		WINSTON.ADD(WINSTON.transports.Console, { level: 'debug' });
+		WINSTON.add(WINSTON.transports.Console, { level: 'debug' });
 	}
 	
 	if ((typeof options.isTest) != 'undefined' && options.isTest) {
@@ -27,7 +27,8 @@ function gpdpFormatter(options) {
 			// add methods for testing here
 			testToReqMapping	: ManyToManyLookup,
 			sheetToCSV			: SheetToCSV, 
-			ParseCommentBlocks	: ParseHeaders
+			ParseCommentBlocks	: ParseCommentBlocks,
+			logger				: WINSTON
 		}
 	}
 	else {
@@ -110,25 +111,28 @@ function gpdpFormatter(options) {
 		// This line opens the file as a readable stream
 		var readStream = fs.createReadStream(filename);
 		
-		readStream.on('readable', function() {
+		//readStream.on('readable', function() {
 			var chunk;
-			while (null != (chunk = readStream.read())) {
-				chunk = chunk.toString();
+			chunk = fs.readFileSync(filename).toString();
+			//while (null != (chunk = readStream.read())) {
+			//	chunk = chunk.toString();
 				for (var i = 0, len = chunk.length; i < len; i++) {
 					var header = accumulator(chunk[i]);
 					if (header == null)
 						continue;
-					output.push(header);
+					output.push(ParseCommentBlockMetadata(header));
 				}
-			}
+			//}
 
 			if (state) {
 				var msg = 'ParseCommentBlocks: Unclosed comment block encountered in ' + filename + ', aborting.';
 				WINSTON.log('error', msg);
 				throw Error(msg);
-			}
+			}			
 			WINSTON.log('verbose', 'ParseCommentBlocks: Exited.');
-		});
+		//});
+		
+		return output;
 		
 		// parsing helper one character at a time
 	    function accumulator(char) {
@@ -152,42 +156,64 @@ function gpdpFormatter(options) {
 					}
 				}
 			}
-			else if (state)					// only if state is in between delimiters...				
+			else if (state) {				// only if state is in between delimiters...	
+				index2 = 0;			
 				value += char;				// ...do we accumulate char to block being formed
+			}
 			return null;					// indicate no block completed
 		}
+	}
+
+	function ParseCommentBlockMetadata(blockText) {
+		WINSTON.log('verbose', 'ParseCommentBlockMetadata: Entered.');
+		var metadata = new Object();
+		var lines = blockText.split("\n");
+		for (var line in lines) {
+			line = lines[line];
+			if (line.startsWith('-- ')) {
+				if (line.indexOf(':', 0) != -1) {
+					line = line.substr(3);
+					var spans = line.split(':');
+					metadata[spans[0].trim()] = spans[1].trim();
+					WINSTON.log('verbose', 'ParseCommentBlockMetadata: parsed ' + spans[0].trim() + ' : ' + spans[1].trim());
+				}
+			}
+		}
+		
+		WINSTON.log('verbose', 'ParseCommentBlockMetadata: Exited.');
+		return metadata;
 	}
 }
 
 function gpdpFormatterTester(objectUnderTest, testOptions) {
-	WINSTON.log('verbose', 'Testing ManyToManyLookup, see results in console.');
-	var map = objectUnderTest.testToReqMapping(testOptions.xlsxPath, testOptions);
+	objectUnderTest.logger.log('verbose', 'Testing ManyToManyLookup, see results in console.');
+	var map = objectUnderTest.testToReqMapping(testOptions.mappingXlsxPath, testOptions);
 	
 	for (var i in map)
 		for (var j in map[i])
 			console.log(i + ' => ' + map[i][j]);
 	
-	WINSTON.log('verbose', 'Testing ParseCommentBlocks, see results in console.');
-	var arrayOfCommentBlocks = objectUnderTest.ParseCommentBlocks(testOptions.openingDelim,
+	objectUnderTest.logger.log('verbose', 'Testing ParseCommentBlocks, see results in console.');
+	var metadatas = objectUnderTest.ParseCommentBlocks(testOptions.openingDelim,
 																testOptions.closingDelim,
 																testOptions.scriptPath);
-	for (var block in arrayOfCommentBlocks)
-		console.log(block);
+	for (var metadata in metadatas)
+		for (prop in metadatas[metadata])
+			objectUnderTest.logger.log('verbose', prop + ': ' + metadatas[metadata][prop]);
 }
 
 // these options work with tested object and its tester
 var testOptions = {
 	isTest			: true,
-	xlsxPath		: 'C:\\Users\\pspattillo\\Documents\\Doc\\Stafford Project\\testtoreq.xlsx',
+	mappingXlsxPath	: 'C:\\Users\\pspattillo\\Documents\\Doc\\Stafford Project\\testtoreq.xlsx',
 	keyColumnName	: 'Test ID',
 	valueColumnName	: 'Requirements ID',
-	scriptPath		: 'C:\\Users\\pspattillo\\Desktop\\test.txt',
+	scriptPath      :  'C:\\Users\\pspattillo\\Documents\\Doc\\Stafford Project\\Sample_Script\\Buttons_spec.js',
 	openingDelim	: '/*',
 	closingDelim    : '*/'
 }
 
 
-WINSTON.log('verbose', 'Get private methods of gpdpFormatter for testing.');
 var objectUnderTest = gpdpFormatter(testOptions);
-WINSTON.log('verbose', 'Invoke unit test for gpdpFormatted.');
+objectUnderTest.logger.log('verbose', 'Invoke unit test for gpdpFormatted.');
 gpdpFormatterTester(objectUnderTest, testOptions);
